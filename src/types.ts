@@ -1,60 +1,32 @@
-// Buffer API v1 response types
+// Buffer GraphQL API types
 
-export interface BufferUser {
-  id: string;
-  name: string;
-  plan: string;
-  timezone: string;
-  created_at: number;
-}
+export type Service =
+  | 'instagram'
+  | 'facebook'
+  | 'twitter'
+  | 'linkedin'
+  | 'pinterest'
+  | 'tiktok'
+  | 'googlebusiness'
+  | 'startPage'
+  | 'mastodon'
+  | 'youtube'
+  | 'threads'
+  | 'bluesky';
 
-export interface BufferProfile {
-  id: string;
-  service: string;
-  service_id: string;
-  service_username: string;
-  formatted_service: string;
-  formatted_username: string;
-  avatar: string;
-  default: boolean;
-  schedules: BufferSchedule[];
-  counts: {
-    pending: number;
-    sent: number;
-    daily_suggestions: number;
-  };
-}
+export type PostStatus = 'draft' | 'needs_approval' | 'scheduled' | 'sending' | 'sent' | 'error';
 
-export interface BufferSchedule {
-  days: string[];
-  times: string[];
-}
+export type ShareMode = 'addToQueue' | 'shareNow' | 'shareNext' | 'customScheduled' | 'recommendedTime';
 
-export interface BufferUpdate {
-  id: string;
-  created_at: number;
-  day: string;
-  due_at: number;
-  due_time: string;
-  media: {
-    photo?: string;
-    link?: string;
-    description?: string;
-    title?: string;
-  };
-  profile_id: string;
-  profile_service: string;
-  sent_at?: number;
-  service_update_id?: string;
-  status: string;
-  text: string;
-  text_formatted: string;
-  user_id: string;
-  via: string;
-}
+export type SchedulingType = 'automatic' | 'notification';
 
-export interface BufferApiError {
-  error?: string;
-  message?: string;
-  code?: number;
+export interface GraphQLResponse<T = unknown> {
+  data?: T;
+  errors?: Array<{
+    message: string;
+    extensions?: {
+      code?: string;
+      retryAfter?: number;
+    };
+  }>;
 }

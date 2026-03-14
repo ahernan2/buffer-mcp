@@ -2,31 +2,45 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 const API_INFO = `# Buffer MCP Server — API Info
 
+## API
+- GraphQL API at https://api.buffer.com (public beta, launched Feb 2026)
+- Authentication: Bearer token via Authorization header
+- Content-Type: application/json
+
 ## Rate Limits
-- 60 requests per minute per access token
-- On 429 response, wait before retrying
+- 100 requests per 15 minutes (third-party clients)
+- 2000 requests per 15 minutes (account-wide across all clients)
+- Response headers: RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset
+- HTTP 429 on exceeded, with retryAfter in seconds
 
 ## Supported Platforms
-Buffer supports posting to: Facebook, Instagram, Twitter/X, LinkedIn, Pinterest, Mastodon, Google Business, TikTok, YouTube, Bluesky, Threads, and Shopify.
-Available platforms depend on the user's connected profiles.
+Instagram, Facebook, Twitter/X, LinkedIn, Pinterest, TikTok, Google Business,
+Mastodon, YouTube, Threads, Bluesky, Start Page.
+Available platforms depend on the user's connected channels.
 
 ## Important Limitations
-- **No analytics/engagement endpoints**: Buffer's v1 API only covers post management and scheduling. Metrics like likes, comments, and reach are not available via API.
-- **No direct message support**: Buffer only handles public posts.
-- **Media uploads**: Buffer accepts media URLs (not file uploads). Images must be hosted somewhere accessible.
+- **No edit/delete posts**: The beta API only supports creating posts, not editing or deleting them. Use the Buffer dashboard for those actions.
+- **No analytics/engagement**: Metrics like likes, comments, and reach are not available via API.
+- **No DMs**: Only public posts are supported.
+- **Media via URL only**: Images/videos must be pre-hosted. No file upload endpoint yet.
+- **Beta status**: API is additive-only; fields are never removed but new ones may appear.
 
 ## Typical Workflow
-1. \`profiles_list\` — get connected profiles and their IDs
-2. \`posts_create\` — create a post (goes to queue by default)
-3. \`posts_list_pending\` — review queued posts
-4. \`posts_share_now\` or \`posts_move_to_top\` — publish immediately or prioritize
-5. \`posts_list_sent\` — verify published posts
+1. \`account_info\` — get your organization ID
+2. \`channels_list\` — get connected channels and their IDs
+3. \`post_create\` — create a post (queue, schedule, or publish immediately)
+4. \`posts_list\` — review queued/sent posts with filters
+5. \`post_get\` — get full details for a specific post
 
-## Scheduling
-- Posts added without \`scheduled_at\` or \`now\` go into the profile's queue
-- The queue publishes posts according to the profile's schedule (see \`schedules_get\`)
-- Use \`scheduled_at\` with an ISO 8601 datetime to schedule for a specific time
-- Use \`now: true\` to bypass the queue and publish immediately
+## Scheduling Modes
+- \`addToQueue\`: Post goes into the channel's queue (published at next scheduled slot)
+- \`shareNow\`: Publish immediately
+- \`shareNext\`: Move to the front of the queue
+- \`customScheduled\`: Schedule for a specific time (provide \`due_at\` ISO 8601 datetime)
+
+## Scheduling Types
+- \`automatic\`: Buffer publishes the post directly
+- \`notification\`: Buffer sends you a reminder to publish manually (required for some platforms like TikTok)
 `;
 
 export function registerApiInfoResource(server: McpServer) {
@@ -34,7 +48,7 @@ export function registerApiInfoResource(server: McpServer) {
     'api-info',
     'buffer://info/api',
     {
-      description: 'Buffer API info: rate limits, supported platforms, limitations, and typical workflow',
+      description: 'Buffer API info: rate limits, supported platforms, limitations, scheduling modes, and typical workflow',
       mimeType: 'text/markdown',
     },
     async () => ({

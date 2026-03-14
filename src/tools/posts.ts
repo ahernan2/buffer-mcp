@@ -1,163 +1,178 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { api, formatResult } from '../api-client.js';
+import { graphql, formatResult } from '../api-client.js';
+
+const POST_FIELDS = `
+  id
+  text
+  status
+  via
+  shareMode
+  schedulingType
+  isCustomScheduled
+  createdAt
+  updatedAt
+  dueAt
+  sentAt
+  sharedNow
+  channelId
+  channelService
+  externalLink
+  tags { id name color }
+  notes { id text type createdAt }
+  assets {
+    ... on ImageAsset { id type mimeType source thumbnail image { altText width height } }
+    ... on VideoAsset { id type mimeType source thumbnail video { durationMs width height } }
+    ... on DocumentAsset { id type mimeType source thumbnail }
+  }
+  error { message supportUrl }
+  allowedActions
+`;
 
 export function registerPosts(server: McpServer) {
   server.tool(
-    'posts_create',
-    'Create a new post in Buffer. Posts go to the queue by default. Set now=true to share immediately, or provide scheduled_at for a specific time.',
+    'posts_list',
+    'List posts for an organization with optional filters by status, channel, and date range. Supports cursor-based pagination.',
     {
-      profile_ids: z
+      organization_id: z.string().describe('Organization ID'),
+      status: z
+        .array(z.enum(['draft', 'needs_approval', 'scheduled', 'sending', 'sent', 'error']))
+        .optional()
+        .describe('Filter by post status (e.g. ["scheduled", "sent"])'),
+      channel_ids: z
         .array(z.string())
-        .min(1)
-        .describe('Array of profile IDs to post to (get from profiles_list)'),
-      text: z.string().describe('The post content text'),
-      now: z.boolean().optional().describe('Share immediately instead of adding to queue'),
-      scheduled_at: z
+        .optional()
+        .describe('Filter by channel IDs'),
+      due_at_start: z.string().optional().describe('Filter posts due after this ISO 8601 datetime'),
+      due_at_end: z.string().optional().describe('Filter posts due before this ISO 8601 datetime'),
+      sort_by: z
+        .enum(['dueAt', 'createdAt'])
+        .optional()
+        .describe('Sort field (default: dueAt)'),
+      sort_direction: z
+        .enum(['asc', 'desc'])
+        .optional()
+        .describe('Sort direction (default: asc)'),
+      first: z.number().int().min(1).max(100).optional().describe('Number of posts to return (default: 20, max: 100)'),
+      after: z.string().optional().describe('Cursor for pagination (from pageInfo.endCursor)'),
+    },
+    async ({ organization_id, status, channel_ids, due_at_start, due_at_end, sort_by, sort_direction, first, after }) => {
+      const filter: Record<string, unknown> = {};
+      if (status) filter.status = status;
+      if (channel_ids) filter.channelIds = channel_ids;
+      if (due_at_start || due_at_end) {
+        filter.dueAt = {
+          ...(due_at_start && { start: due_at_start }),
+          ...(due_at_end && { end: due_at_end }),
+        };
+      }
+
+      const sort = [{
+        field: sort_by || 'dueAt',
+        direction: sort_direction || 'asc',
+      }];
+
+      const variables: Record<string, unknown> = {
+        input: {
+          organizationId: organization_id,
+          filter: Object.keys(filter).length > 0 ? filter : undefined,
+          sort,
+        },
+        first: first || 20,
+      };
+      if (after) variables.after = after;
+
+      const res = await graphql(
+        `query($input: PostsInput!, $first: Int, $after: String) {
+          posts(input: $input, first: $first, after: $after) {
+            pageInfo { startCursor endCursor hasNextPage }
+            edges {
+              cursor
+              node { ${POST_FIELDS} }
+            }
+          }
+        }`,
+        variables,
+      );
+      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
+    },
+  );
+
+  server.tool(
+    'post_get',
+    'Get a single post by its ID with full details including assets, tags, notes, and allowed actions.',
+    {
+      post_id: z.string().describe('Post ID'),
+    },
+    async ({ post_id }) => {
+      const res = await graphql(
+        `query($input: PostInput!) {
+          post(input: $input) { ${POST_FIELDS} }
+        }`,
+        { input: { id: post_id } },
+      );
+      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
+    },
+  );
+
+  server.tool(
+    'post_create',
+    'Create a new post on a channel. Use mode to control scheduling: "addToQueue" (default queue), "shareNow" (publish immediately), "shareNext" (next in queue), or "customScheduled" (set dueAt).',
+    {
+      channel_id: z.string().describe('Channel ID to post to (get from channels_list)'),
+      text: z.string().describe('Post content text'),
+      mode: z
+        .enum(['addToQueue', 'shareNow', 'shareNext', 'customScheduled'])
+        .optional()
+        .describe('Scheduling mode (default: addToQueue)'),
+      due_at: z
         .string()
         .optional()
-        .describe('ISO 8601 datetime to schedule the post (e.g. 2025-03-15T14:30:00Z)'),
-      shorten: z.boolean().optional().describe('Auto-shorten links in the text (default: true)'),
-      media_photo: z.string().url().optional().describe('URL of an image to attach'),
-      media_link: z.string().url().optional().describe('URL of a link to attach'),
-      media_description: z.string().optional().describe('Description for the media attachment'),
+        .describe('ISO 8601 datetime for scheduled post (required when mode is customScheduled)'),
+      scheduling_type: z
+        .enum(['automatic', 'notification'])
+        .optional()
+        .describe('Publishing type: "automatic" (Buffer publishes) or "notification" (sends reminder). Default: automatic'),
+      image_urls: z
+        .array(z.string().url())
+        .optional()
+        .describe('URLs of images to attach'),
+      video_url: z.string().url().optional().describe('URL of a video to attach'),
+      tag_ids: z.array(z.string()).optional().describe('Tag IDs to apply to the post'),
     },
-    async ({ profile_ids, text, now, scheduled_at, shorten, media_photo, media_link, media_description }) => {
-      const body: Record<string, unknown> = {
-        profile_ids,
+    async ({ channel_id, text, mode, due_at, scheduling_type, image_urls, video_url, tag_ids }) => {
+      const input: Record<string, unknown> = {
+        channelId: channel_id,
         text,
+        mode: mode || 'addToQueue',
+        schedulingType: scheduling_type || 'automatic',
       };
 
-      if (now !== undefined) body.now = now;
-      if (scheduled_at) body.scheduled_at = Math.floor(new Date(scheduled_at).getTime() / 1000);
-      if (shorten !== undefined) body.shorten = shorten;
+      if (due_at) input.dueAt = due_at;
+      if (tag_ids) input.tagIds = tag_ids;
 
-      const media: Record<string, string> = {};
-      if (media_photo) media.photo = media_photo;
-      if (media_link) media.link = media_link;
-      if (media_description) media.description = media_description;
-      if (Object.keys(media).length > 0) body.media = media;
+      const assets: Record<string, unknown> = {};
+      if (image_urls?.length) {
+        assets.images = image_urls.map((url) => ({ url }));
+      }
+      if (video_url) {
+        assets.videos = [{ url: video_url }];
+      }
+      if (Object.keys(assets).length > 0) input.assets = assets;
 
-      const res = await api.post('/updates/create.json', body);
-      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
-    },
-  );
-
-  server.tool(
-    'posts_get',
-    'Get a single post/update by its ID.',
-    {
-      update_id: z.string().describe('The Buffer update ID'),
-    },
-    async ({ update_id }) => {
-      const res = await api.get(`/updates/${update_id}.json`);
-      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
-    },
-  );
-
-  server.tool(
-    'posts_edit',
-    'Edit an existing pending post. Only pending (queued/scheduled) posts can be edited.',
-    {
-      update_id: z.string().describe('The Buffer update ID to edit'),
-      text: z.string().optional().describe('New post content text'),
-      scheduled_at: z
-        .string()
-        .optional()
-        .describe('New ISO 8601 scheduled datetime'),
-      now: z.boolean().optional().describe('Share immediately instead of keeping in queue'),
-      media_photo: z.string().url().optional().describe('URL of an image to attach'),
-      media_link: z.string().url().optional().describe('URL of a link to attach'),
-      media_description: z.string().optional().describe('Description for the media attachment'),
-    },
-    async ({ update_id, text, scheduled_at, now, media_photo, media_link, media_description }) => {
-      const body: Record<string, unknown> = {};
-
-      if (text !== undefined) body.text = text;
-      if (now !== undefined) body.now = now;
-      if (scheduled_at) body.scheduled_at = Math.floor(new Date(scheduled_at).getTime() / 1000);
-
-      const media: Record<string, string> = {};
-      if (media_photo) media.photo = media_photo;
-      if (media_link) media.link = media_link;
-      if (media_description) media.description = media_description;
-      if (Object.keys(media).length > 0) body.media = media;
-
-      const res = await api.post(`/updates/${update_id}/update.json`, body);
-      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
-    },
-  );
-
-  server.tool(
-    'posts_delete',
-    'Permanently delete a pending post from the Buffer queue.',
-    {
-      update_id: z.string().describe('The Buffer update ID to delete'),
-    },
-    async ({ update_id }) => {
-      const res = await api.post(`/updates/${update_id}/destroy.json`, {});
-      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
-    },
-  );
-
-  server.tool(
-    'posts_list_pending',
-    'List pending (queued/scheduled) posts for a profile.',
-    {
-      profile_id: z.string().describe('The Buffer profile ID'),
-      page: z.number().int().min(1).optional().describe('Page number (default: 1)'),
-      count: z.number().int().min(1).max(100).optional().describe('Posts per page (default: 10, max: 100)'),
-    },
-    async ({ profile_id, page, count }) => {
-      const params = new URLSearchParams();
-      if (page !== undefined) params.set('page', String(page));
-      if (count !== undefined) params.set('count', String(count));
-      const qs = params.toString();
-      const path = `/profiles/${profile_id}/updates/pending.json${qs ? `?${qs}` : ''}`;
-      const res = await api.get(path);
-      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
-    },
-  );
-
-  server.tool(
-    'posts_list_sent',
-    'List sent (published) posts for a profile.',
-    {
-      profile_id: z.string().describe('The Buffer profile ID'),
-      page: z.number().int().min(1).optional().describe('Page number (default: 1)'),
-      count: z.number().int().min(1).max(100).optional().describe('Posts per page (default: 10, max: 100)'),
-    },
-    async ({ profile_id, page, count }) => {
-      const params = new URLSearchParams();
-      if (page !== undefined) params.set('page', String(page));
-      if (count !== undefined) params.set('count', String(count));
-      const qs = params.toString();
-      const path = `/profiles/${profile_id}/updates/sent.json${qs ? `?${qs}` : ''}`;
-      const res = await api.get(path);
-      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
-    },
-  );
-
-  server.tool(
-    'posts_share_now',
-    'Immediately share a pending post (skips the queue schedule).',
-    {
-      update_id: z.string().describe('The Buffer update ID to share now'),
-    },
-    async ({ update_id }) => {
-      const res = await api.post(`/updates/${update_id}/share.json`, {});
-      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
-    },
-  );
-
-  server.tool(
-    'posts_move_to_top',
-    'Move a pending post to the top of the queue so it publishes next.',
-    {
-      update_id: z.string().describe('The Buffer update ID to move to top'),
-    },
-    async ({ update_id }) => {
-      const res = await api.post(`/updates/${update_id}/move_to_top.json`, {});
+      const res = await graphql(
+        `mutation($input: CreatePostInput!) {
+          createPost(input: $input) {
+            ... on PostActionSuccess {
+              post { ${POST_FIELDS} }
+            }
+            ... on MutationError {
+              message
+            }
+          }
+        }`,
+        { input },
+      );
       return { content: [{ type: 'text' as const, text: formatResult(res) }] };
     },
   );
