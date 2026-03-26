@@ -61,7 +61,7 @@ Add to your `.mcp.json`:
 }
 ```
 
-## Tools (7)
+## Tools (11)
 
 | Tool | Description |
 |------|-------------|
@@ -70,8 +70,11 @@ Add to your `.mcp.json`:
 | `channel_get` | Get details for a single channel |
 | `posts_list` | List posts with filters (status, channel, date range) and pagination |
 | `post_get` | Get a single post by ID |
-| `post_create` | Create a post (queue, schedule, publish now, or publish next) |
+| `post_create` | Create a post (queue, schedule, publish now, draft, or publish next) |
+| `post_delete` | Delete a post by ID |
 | `idea_create` | Save an idea to the Buffer ideas board |
+| `tags_discover` | Discover tag IDs by reading tags from posts |
+| `daily_limits` | Check daily posting limits per channel |
 
 ## Resources (1)
 
@@ -79,10 +82,45 @@ Add to your `.mcp.json`:
 |-----|-------------|
 | `buffer://info/api` | API info, rate limits, supported platforms, limitations |
 
+## First-Time Setup: Discovering Tags
+
+Buffer's API doesn't have a way to list tags directly — tags must be created in the Buffer dashboard. To discover your tag IDs for use with `post_create`:
+
+1. **Create a discovery draft:**
+   > "Create a draft post called 'Tag Discovery — attach your tags here'"
+
+   The AI calls `post_create` with `save_to_draft=true`.
+
+2. **Attach your tags:** Open Buffer, find the draft, and attach every tag you want available to the AI.
+
+3. **Tell the AI you're done:** The AI calls `tags_discover` with the draft's post ID and reads back all tag names, colors, and IDs.
+
+4. **Clean up:** The AI deletes the discovery draft with `post_delete`.
+
+After this one-time setup, the AI can tag every post it creates using the discovered IDs.
+
+## Common Workflows
+
+**Queue a post to LinkedIn:**
+> "Post this to my LinkedIn: [content]"
+
+**Schedule a week of content:**
+> "Create 5 LinkedIn posts from my content library, scheduled for next week"
+
+**Check what's queued:**
+> "What posts do I have scheduled across all channels?"
+
+**Save an idea for later:**
+> "Save this as an idea for Instagram: [concept]"
+
+**Check posting limits before batch creation:**
+> "How many more posts can I make today on each channel?"
+
 ## Limitations
 
-- **No edit/delete via API**: The beta GraphQL API supports creating posts only. Use the Buffer dashboard to edit or delete.
+- **No edit via API**: Posts can be created and deleted, but not edited. Use the Buffer dashboard to edit.
 - **No analytics**: Engagement metrics (likes, comments, reach) are not available via API.
 - **No DMs**: Only public posts are supported.
+- **No tag creation via API**: Tags must be created in the Buffer dashboard. Use the tag discovery workflow above to find their IDs.
 - **Media via URL only**: Attach images/videos by providing a hosted URL. No file upload endpoint yet.
 - **Rate limit**: 100 requests per 15 minutes per client.
