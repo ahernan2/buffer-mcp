@@ -139,8 +139,10 @@ export function registerPosts(server: McpServer) {
         .describe('URLs of images to attach'),
       video_url: z.string().url().optional().describe('URL of a video to attach'),
       tag_ids: z.array(z.string()).optional().describe('Tag IDs to apply to the post'),
+      save_to_draft: z.boolean().optional().describe('Save as draft instead of posting (default: false)'),
+      ai_assisted: z.boolean().optional().describe('Flag this post as AI-assisted (default: false)'),
     },
-    async ({ channel_id, text, mode, due_at, scheduling_type, image_urls, video_url, tag_ids }) => {
+    async ({ channel_id, text, mode, due_at, scheduling_type, image_urls, video_url, tag_ids, save_to_draft, ai_assisted }) => {
       const input: Record<string, unknown> = {
         channelId: channel_id,
         text,
@@ -150,6 +152,8 @@ export function registerPosts(server: McpServer) {
 
       if (due_at) input.dueAt = due_at;
       if (tag_ids) input.tagIds = tag_ids;
+      if (save_to_draft) input.saveToDraft = save_to_draft;
+      if (ai_assisted) input.aiAssisted = ai_assisted;
 
       const assets: Record<string, unknown> = {};
       if (image_urls?.length) {
@@ -172,6 +176,30 @@ export function registerPosts(server: McpServer) {
           }
         }`,
         { input },
+      );
+      return { content: [{ type: 'text' as const, text: formatResult(res) }] };
+    },
+  );
+
+  server.tool(
+    'post_delete',
+    'Delete a post by its ID. Returns the deleted post ID on success. This action cannot be undone.',
+    {
+      post_id: z.string().describe('Post ID to delete'),
+    },
+    async ({ post_id }) => {
+      const res = await graphql(
+        `mutation($input: DeletePostInput!) {
+          deletePost(input: $input) {
+            ... on DeletePostSuccess {
+              id
+            }
+            ... on VoidMutationError {
+              message
+            }
+          }
+        }`,
+        { input: { id: post_id } },
       );
       return { content: [{ type: 'text' as const, text: formatResult(res) }] };
     },
