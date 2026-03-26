@@ -19,18 +19,29 @@ Mastodon, YouTube, Threads, Bluesky, Start Page.
 Available platforms depend on the user's connected channels.
 
 ## Important Limitations
-- **No edit/delete posts**: The beta API only supports creating posts, not editing or deleting them. Use the Buffer dashboard for those actions.
+- **No edit posts**: The beta API supports creating and deleting posts, but not editing them.
 - **No analytics/engagement**: Metrics like likes, comments, and reach are not available via API.
 - **No DMs**: Only public posts are supported.
+- **No tag management**: Tags cannot be created, renamed, or deleted via API. They must be created in the Buffer dashboard. See "Tag Discovery" below for how to discover existing tag IDs.
 - **Media via URL only**: Images/videos must be pre-hosted. No file upload endpoint yet.
 - **Beta status**: API is additive-only; fields are never removed but new ones may appear.
 
 ## Typical Workflow
 1. \`account_info\` — get your organization ID
 2. \`channels_list\` — get connected channels and their IDs
-3. \`post_create\` — create a post (queue, schedule, or publish immediately)
-4. \`posts_list\` — review queued/sent posts with filters
-5. \`post_get\` — get full details for a specific post
+3. \`daily_limits\` — check how many posts you can still make today
+4. \`post_create\` — create a post (queue, schedule, or publish immediately)
+5. \`posts_list\` — review queued/sent posts with filters
+6. \`post_get\` — get full details for a specific post
+7. \`post_delete\` — remove a post
+
+## Tag Discovery (First-Time Setup)
+Buffer tags can only be created in the dashboard, but you can discover their IDs for API use:
+1. \`post_create\` with \`save_to_draft=true\` — create a draft: "Tag Discovery — attach your tags here"
+2. Ask the user to open Buffer and attach all their tags to the draft
+3. \`tags_discover\` with the draft's post ID — reads back all tags with their IDs
+4. Save the tag IDs for use with \`post_create\`'s \`tag_ids\` parameter
+5. \`post_delete\` — clean up the discovery draft
 
 ## Scheduling Modes
 - \`addToQueue\`: Post goes into the channel's queue (published at next scheduled slot)
