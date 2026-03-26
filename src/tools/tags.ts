@@ -14,7 +14,7 @@ First-time setup workflow:
 4. Save the returned tag IDs for use with post_create's tag_ids parameter
 5. Use post_delete to clean up the discovery draft`,
     {
-      organization_id: z.string().describe('Organization ID'),
+      organization_id: z.string().optional().describe('Organization ID (required when scanning recent posts, not needed with post_id)'),
       post_id: z
         .string()
         .optional()
@@ -44,6 +44,9 @@ First-time setup workflow:
       }
 
       // Otherwise scan recent posts and extract unique tags
+      if (!organization_id) {
+        throw new Error('organization_id is required when no post_id is provided');
+      }
       const res = await graphql(
         `query($input: PostsInput!, $first: Int) {
           posts(input: $input, first: $first) {

@@ -18,7 +18,7 @@ const POST_FIELDS = `
   channelId
   channelService
   externalLink
-  tags { id name color }
+  tags { id name color isLocked }
   notes { id text type createdAt }
   assets {
     ... on ImageAsset { id type mimeType source thumbnail image { altText width height } }

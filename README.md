@@ -61,7 +61,7 @@ Add to your `.mcp.json`:
 }
 ```
 
-## Tools (11)
+## Tools (10)
 
 | Tool | Description |
 |------|-------------|

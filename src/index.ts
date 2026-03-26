@@ -14,7 +14,7 @@ const server = new McpServer({
   version: '2.0.0',
 });
 
-// Register all tools (11 total)
+// Register all tools (10 total)
 registerAccount(server);    // 1 tool:  account_info
 registerChannels(server);   // 2 tools: channels_list, channel_get
 registerPosts(server);      // 4 tools: posts_list, post_get, post_create, post_delete
